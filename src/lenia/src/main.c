@@ -17,7 +17,7 @@ int main()
 {
     double start = omp_get_wtime();
     // Run the simulation
-    double *world = evolve_lenia(N, N, NUM_STEPS, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS);
+    double *world = evolve_lenia(N, N, NUM_STEPS, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, CPU);
     double stop = omp_get_wtime();
     printf("Execution time: %.3f\n", stop - start);
     free(world);

@@ -4,6 +4,7 @@
 #include "lenia.h"
 #include "orbium.h"
 #include "gifenc.h"
+#include "lenia.h"
 
 // Include CUDA headers
 // #include <cuda_runtime.h>
@@ -91,7 +92,7 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
 }
 
 // Function to evolve Lenia
-double *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums)
+double *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device)
 {
 
 #ifdef GENERATE_GIF
@@ -105,46 +106,59 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
     );
 #endif
 
-    // Allocate memory
-    double *w = (double *)calloc(kernel_size * kernel_size, sizeof(double));
-    double *world = (double *)calloc(rows * cols, sizeof(double));
-    double *tmp = (double *)calloc(rows * cols, sizeof(double));
-
-    // Generate convolution kernel
-    w=generate_kernel(w,kernel_size);
-
-    // Place orbiums
-    for (unsigned int o = 0; o < num_orbiums; o++)
+    if (device == GPU)
     {
-        world = place_orbium(world, rows, cols, orbiums[o].row, orbiums[o].col, orbiums[o].angle);
+        fprintf(stderr, "GPU support is not implemented.\n");
+        return NULL;
     }
-
-    // Lenia Simulation
-    for (unsigned int step = 0; step < steps; step++)
+    else if (device == CPU)
     {
-        // Convolution
-        tmp = convolve2d(tmp, world, w, rows, cols, kernel_size, kernel_size);
-        
-        // Evolution
-        for (unsigned int i = 0; i < rows; i++)
+        // Allocate memory
+        double *w = (double *)calloc(kernel_size * kernel_size, sizeof(double));
+        double *world = (double *)calloc(rows * cols, sizeof(double));
+        double *tmp = (double *)calloc(rows * cols, sizeof(double));
+
+        // Generate convolution kernel
+        w=generate_kernel(w,kernel_size);
+
+        // Place orbiums
+        for (unsigned int o = 0; o < num_orbiums; o++)
         {
-            for (unsigned int j = 0; j < cols; j++)
+            world = place_orbium(world, rows, cols, orbiums[o].row, orbiums[o].col, orbiums[o].angle);
+        }
+
+        // Lenia Simulation
+        for (unsigned int step = 0; step < steps; step++)
+        {
+            // Convolution
+            tmp = convolve2d(tmp, world, w, rows, cols, kernel_size, kernel_size);
+
+            // Evolution
+            for (unsigned int i = 0; i < rows; i++)
             {
-                world[i * rows + j] += dt * growth_lenia(tmp[i * rows + j]);
-                world[i * rows + j] = fmin(1, fmax(0, world[i * rows + j])); // Clip between 0 and 1
+                for (unsigned int j = 0; j < cols; j++)
+                {
+                    world[i * rows + j] += dt * growth_lenia(tmp[i * rows + j]);
+                    world[i * rows + j] = fmin(1, fmax(0, world[i * rows + j])); // Clip between 0 and 1
 #ifdef GENERATE_GIF
-                gif->frame[i * rows + j] = world[i * rows + j] * 255;
+                    gif->frame[i * rows + j] = world[i * rows + j] * 255;
 #endif
+                }
             }
+#ifdef GENERATE_GIF
+            ge_add_frame(gif, 5);
+#endif
         }
 #ifdef GENERATE_GIF
-        ge_add_frame(gif, 5);
+        ge_close_gif(gif);
 #endif
+        free(w);
+        free(tmp);
+        return world;
     }
-#ifdef GENERATE_GIF
-    ge_close_gif(gif);
-#endif
-    free(w);
-    free(tmp);
-    return world;
+    else
+    {
+        fprintf(stderr, "Invalid device specified. Use 'GPU' or 'CPU'.\n");
+        return NULL;
+    }
 }

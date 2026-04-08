@@ -91,6 +91,31 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
     return result;
 }
 
+// Function to perform convolution on input using kernel w on cuda
+// Note that the kernel is flipped for convolution as per definition, and we use modular indexing for toroidal world
+__global__ void convolve2d_cuda(double *result, const double *input, const double *w, const unsigned int rows, const unsigned int cols, const unsigned int w_rows, const unsigned int w_cols)
+{
+    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < cols && y < rows)
+    {
+        double sum = 0;
+        for (int ki = w_rows - 1, kri = 0; ki >= 0; ki--, kri++)
+        {
+            for (int kj = w_cols - 1, kcj = 0; kj >= 0; kj--, kcj++)
+            {
+                    int r = (y - w_rows / 2 + rows + kri) % rows;
+                    int c = (x - w_cols / 2 + cols + kcj) % cols;
+                    sum += w[ki * w_cols + kj] * input[r * cols + c];}
+        }
+        result[y * cols + x] = sum;
+    }
+
+    // Else do nothing because we are out of bounds.
+
+}
+
 // Function to evolve Lenia
 double *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device)
 {

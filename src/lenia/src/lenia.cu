@@ -133,7 +133,7 @@ __global__ void growth_lenia_cuda(double* d_world, double* d_tmp_world, unsigned
 }
 
 // Function to evolve Lenia
-double *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device)
+LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device)
 {
 
 #ifdef GENERATE_GIF
@@ -146,6 +146,8 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
         0                /* infinite loop */
     );
 #endif
+
+    Times times = {0, 0, 0};
 
     if (device == GPU)
     {
@@ -219,7 +221,7 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
         // Free space: host
         free(h_w);
 
-        return h_world;
+        return LeniaResult{h_world, times};
     }
     else if (device == CPU)
     {
@@ -264,7 +266,7 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
 #endif
         free(w);
         free(tmp);
-        return world;
+        return LeniaResult{world, times};
     }
     else
     {

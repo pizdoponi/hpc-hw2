@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <omp.h>
 #include "lenia.h"
 #include "orbium.h"
 #include "gifenc.h"
@@ -171,9 +172,14 @@ LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, cons
         checkCudaErrors(cudaMalloc((void **)&d_tmp_world, rows * cols * sizeof(double)));
 
         // Transfer data: device <-- host
+        double start_time = omp_get_wtime();
+
         checkCudaErrors(cudaMemcpy(d_w, h_w, kernel_size * kernel_size * sizeof(double), cudaMemcpyHostToDevice));
         checkCudaErrors(cudaMemcpy(d_world, h_world, rows * cols * sizeof(double), cudaMemcpyHostToDevice));
         // No need to transfer tmp_world as it will be computed on device and not used for anything else.
+
+        double end_time = omp_get_wtime();
+        times.t_copy_to_device = end_time - start_time;
 
         // Compute on device
         dim3 blockSize(16, 16); // 16*16=256, should be less than 1024.
@@ -181,6 +187,8 @@ LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, cons
 
         // Lenia Simulation
         // Each time step is still sequential, so this for loop is needed.
+        start_time = omp_get_wtime();
+
         for (unsigned int step = 0; step < steps; step++)
         {
             // Convolution
@@ -205,13 +213,19 @@ LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, cons
 //             ge_add_frame(gif, 5);
 // #endif
         }
+
+        end_time = omp_get_wtime();
+        times.t_execution = end_time - start_time;
 // #ifdef GENERATE_GIF
 //         ge_close_gif(gif);
 // #endif
 
         // Transfer data: device --> host
         checkCudaErrors(cudaDeviceSynchronize());
+        start_time = omp_get_wtime();
         checkCudaErrors(cudaMemcpy(h_world, d_world, rows * cols * sizeof(double), cudaMemcpyDeviceToHost));
+        end_time = omp_get_wtime();
+        times.t_copy_to_host = end_time - start_time;
 
         // free space: device
         checkCudaErrors(cudaFree(d_w));
@@ -240,6 +254,8 @@ LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, cons
         }
 
         // Lenia Simulation
+        double start_time = omp_get_wtime();
+
         for (unsigned int step = 0; step < steps; step++)
         {
             // Convolution
@@ -261,6 +277,9 @@ LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, cons
             ge_add_frame(gif, 5);
 #endif
         }
+        double end_time = omp_get_wtime();
+        times.t_execution = end_time - start_time;
+
 #ifdef GENERATE_GIF
         ge_close_gif(gif);
 #endif

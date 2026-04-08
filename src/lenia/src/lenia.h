@@ -31,7 +31,7 @@ typedef struct {
 } LeniaResult;
 
 
-LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device);
+LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device);
 
 #ifdef __cplusplus
 }

@@ -15,11 +15,10 @@ struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, N / 3, 0}, {N / 3, 0, 180}};
 
 int main()
 {
-    double start = omp_get_wtime();
     // Run the simulation
-    double *world = evolve_lenia(N, N, NUM_STEPS, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, CPU);
-    double stop = omp_get_wtime();
-    printf("Execution time: %.3f\n", stop - start);
-    free(world);
+    LeniaResult result = evolve_lenia(N, N, NUM_STEPS, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, CPU);
+    printf("Execution time: %.3f\n", result.times.t_execution);
+    printf("Time device <-- host: %.3f, Time device --> host: %.3f\n", result.times.t_copy_to_device, result.times.t_copy_to_host);
+    free(result.world);
     return 0;
 }

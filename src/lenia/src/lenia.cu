@@ -135,7 +135,7 @@ __global__ void growth_lenia_cuda(double* d_world, double* d_tmp_world, unsigned
 }
 
 // Function to evolve Lenia
-LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device)
+LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device)
 {
 
 #ifdef GENERATE_GIF
@@ -291,6 +291,6 @@ LeniaResult *evolve_lenia(const unsigned int rows, const unsigned int cols, cons
     else
     {
         fprintf(stderr, "Invalid device specified. Use 'GPU' or 'CPU'.\n");
-        return NULL;
+        return LeniaResult{NULL, times};
     }
 }

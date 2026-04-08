@@ -4,11 +4,10 @@
 #include "lenia.h"
 #include "orbium.h"
 #include "gifenc.h"
-#include "lenia.h"
 
 // Include CUDA headers
-// #include <cuda_runtime.h>
-// #include <cuda.h>
+#include <cuda_runtime.h>
+#include <cuda.h>
 
 // Uncomment to generate gif animation
 //#define GENERATE_GIF
@@ -18,7 +17,7 @@
 #define input(r, c) (input[((r) % rows) * cols + ((c) % cols)])
 
 // Function to calculate Gaussian
-inline double gauss(double x, double mu, double sigma)
+__host__ __device__ inline double gauss(double x, double mu, double sigma)
 {
     return exp(-0.5 * pow((x - mu) / sigma, 2));
 }
@@ -150,8 +149,77 @@ double *evolve_lenia(const unsigned int rows, const unsigned int cols, const uns
 
     if (device == GPU)
     {
-        fprintf(stderr, "GPU support is not implemented.\n");
-        return NULL;
+        // Allocate memory on host
+        double *h_w = (double *)calloc(kernel_size * kernel_size, sizeof(double));
+        double *h_world = (double *)calloc(rows * cols, sizeof(double));
+
+        // Generate convolution kernel
+        h_w=generate_kernel(h_w,kernel_size);
+
+        // Place orbiums
+        for (unsigned int o = 0; o < num_orbiums; o++)
+        {
+            h_world = place_orbium(h_world, rows, cols, orbiums[o].row, orbiums[o].col, orbiums[o].angle);
+        }
+
+        // Allocate memory on device
+        double *d_w, *d_world, *d_tmp_world;
+        checkCudaErrors(cudaMalloc((void **)&d_w, kernel_size * kernel_size * sizeof(double)));
+        checkCudaErrors(cudaMalloc((void **)&d_world, rows * cols * sizeof(double)));
+        checkCudaErrors(cudaMalloc((void **)&d_tmp_world, rows * cols * sizeof(double)));
+
+        // Transfer data: device <-- host
+        checkCudaErrors(cudaMemcpy(d_w, h_w, kernel_size * kernel_size * sizeof(double), cudaMemcpyHostToDevice));
+        checkCudaErrors(cudaMemcpy(d_world, h_world, rows * cols * sizeof(double), cudaMemcpyHostToDevice));
+        // No need to transfer tmp_world as it will be computed on device and not used for anything else.
+
+        // Compute on device
+        dim3 blockSize(16, 16); // 16*16=256, should be less than 1024.
+        dim3 gridSize((cols - 1)/blockSize.x + 1, (rows - 1)/blockSize.y + 1); // gridSize is more than enough, no need for striding.
+
+        // Lenia Simulation
+        // Each time step is still sequential, so this for loop is needed.
+        for (unsigned int step = 0; step < steps; step++)
+        {
+            // Convolution
+            convolve2d_cuda<<<gridSize, blockSize>>>(d_tmp_world, d_world, d_w, rows, cols, kernel_size, kernel_size);
+            checkCudaErrors(cudaGetLastError());
+
+            // Evolution
+            growth_lenia_cuda<<<gridSize, blockSize>>>(d_world, d_tmp_world, rows, cols, dt);
+            checkCudaErrors(cudaGetLastError());
+
+            // gif generation
+//             for (unsigned int i = 0; i < rows; i++)
+//             {
+//                 for (unsigned int j = 0; j < cols; j++)
+//                 {
+// #ifdef GENERATE_GIF
+//                     gif->frame[i * rows + j] = world[i * rows + j] * 255;
+// #endif
+//                 }
+//             }
+// #ifdef GENERATE_GIF
+//             ge_add_frame(gif, 5);
+// #endif
+        }
+// #ifdef GENERATE_GIF
+//         ge_close_gif(gif);
+// #endif
+
+        // Transfer data: device --> host
+        checkCudaErrors(cudaDeviceSynchronize());
+        checkCudaErrors(cudaMemcpy(h_world, d_world, rows * cols * sizeof(double), cudaMemcpyDeviceToHost));
+
+        // free space: device
+        checkCudaErrors(cudaFree(d_w));
+        checkCudaErrors(cudaFree(d_world));
+        checkCudaErrors(cudaFree(d_tmp_world));
+
+        // Free space: host
+        free(h_w);
+
+        return h_world;
     }
     else if (device == CPU)
     {

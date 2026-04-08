@@ -9,6 +9,7 @@
 // Include CUDA headers
 #include <cuda_runtime.h>
 #include <cuda.h>
+#include "helper_cuda.h"
 
 // Uncomment to generate gif animation
 //#define GENERATE_GIF

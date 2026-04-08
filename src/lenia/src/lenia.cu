@@ -116,6 +116,23 @@ __global__ void convolve2d_cuda(double *result, const double *input, const doubl
 
 }
 
+__global__ void growth_lenia_cuda(double* d_world, double* d_tmp_world, unsigned int rows, unsigned int cols, double dt)
+{
+    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < cols && y < rows)
+    {
+        double mu = 0.15;
+        double sigma = 0.015;
+        double u = d_tmp_world[y * cols + x];
+        double growth = -1 + 2 * gauss(u, mu, sigma); // Baseline -1, peak +1
+
+        d_world[y * cols + x] += dt * growth;
+        d_world[y * cols + x] = fmin(1, fmax(0, d_world[y * cols + x])); // Clip between 0 and 1
+    }
+}
+
 // Function to evolve Lenia
 double *evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device)
 {

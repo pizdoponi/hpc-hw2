@@ -223,6 +223,9 @@ LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const
 // #endif
         }
 
+    // Kernel launches are asynchronous; synchronize so execution timing includes real GPU compute time.
+    checkCudaErrors(cudaDeviceSynchronize());
+
         end_time = omp_get_wtime();
         times.t_execution = end_time - start_time;
 // #ifdef GENERATE_GIF
@@ -230,7 +233,6 @@ LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const
 // #endif
 
         // Transfer data: device --> host
-        checkCudaErrors(cudaDeviceSynchronize());
         start_time = omp_get_wtime();
         checkCudaErrors(cudaMemcpy(h_world, d_world, rows * cols * sizeof(double), cudaMemcpyDeviceToHost));
         end_time = omp_get_wtime();

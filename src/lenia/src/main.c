@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <omp.h>
 #include "lenia.h"
 
@@ -13,12 +14,95 @@
 // Orbiums size is 20x20, supproted angles are 0, 90, 180 and 270 degrees.
 struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, N / 3, 0}, {N / 3, 0, 180}};
 
-int main()
+// Write the final world state to a PGM file
+static void write_pgm(const char *path, const double *world, unsigned int rows, unsigned int cols)
 {
-    // Run the simulation
-    LeniaResult result = evolve_lenia(N, N, NUM_STEPS, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, CPU);
-    printf("Execution time: %.3f\n", result.times.t_execution);
-    printf("Time device <-- host: %.3f, Time device --> host: %.3f\n", result.times.t_copy_to_device, result.times.t_copy_to_host);
+    FILE *f = fopen(path, "wb");
+    if (f == NULL)
+    {
+        fprintf(stderr, "Failed to open output file '%s'.\n", path);
+        return;
+    }
+
+    fprintf(f, "P5\n%u %u\n255\n", cols, rows);
+    for (unsigned int i = 0; i < rows; i++)
+    {
+        for (unsigned int j = 0; j < cols; j++)
+        {
+            double value = world[i * cols + j];
+            if (value < 0.0)
+            {
+                value = 0.0;
+            }
+            if (value > 1.0)
+            {
+                value = 1.0;
+            }
+            unsigned char pixel = (unsigned char)(value * 255.0);
+            fwrite(&pixel, sizeof(unsigned char), 1, f);
+        }
+    }
+    fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    Device device = CPU;
+    unsigned int n = N;
+    unsigned int steps = NUM_STEPS;
+    const char *output_path = NULL;
+
+    if (argc > 1)
+    {
+        if (strcmp(argv[1], "gpu") == 0 || strcmp(argv[1], "GPU") == 0)
+        {
+            device = GPU;
+        }
+        else if (strcmp(argv[1], "cpu") == 0 || strcmp(argv[1], "CPU") == 0)
+        {
+            device = CPU;
+        }
+        else
+        {
+            fprintf(stderr, "Unknown device '%s'. Use 'cpu' or 'gpu'.\n", argv[1]);
+            return 1;
+        }
+    }
+
+    if (argc > 2)
+    {
+        n = (unsigned int)strtoul(argv[2], NULL, 10);
+    }
+
+    if (argc > 3)
+    {
+        steps = (unsigned int)strtoul(argv[3], NULL, 10);
+    }
+
+    if (argc > 4)
+    {
+        output_path = argv[4];
+    }
+
+    struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, (int)(n / 3), 0}, {(int)(n / 3), 0, 180}};
+
+    LeniaResult result = evolve_lenia(n, n, steps, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, device);
+
+    double t_total = result.times.t_execution + result.times.t_copy_to_device + result.times.t_copy_to_host;
+
+    printf("DEVICE=%s\n", device == GPU ? "GPU" : "CPU");
+    printf("SIZE=%u\n", n);
+    printf("STEPS=%u\n", steps);
+    printf("T_EXEC=%.6f\n", result.times.t_execution);
+    printf("T_H2D=%.6f\n", result.times.t_copy_to_device);
+    printf("T_D2H=%.6f\n", result.times.t_copy_to_host);
+    printf("T_TOTAL=%.6f\n", t_total);
+
+    if (output_path != NULL)
+    {
+        write_pgm(output_path, result.world, n, n);
+    }
+
     free(result.world);
     return 0;
 }

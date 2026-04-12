@@ -143,7 +143,7 @@ __global__ void growth_lenia_cuda(double* d_world, double* d_tmp_world, unsigned
 }
 
 // Function to evolve Lenia
-LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device)
+LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device, const unsigned int block_x, const unsigned int block_y)
 {
 
 #ifdef GENERATE_GIF
@@ -191,7 +191,7 @@ LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const
         times.t_copy_to_device = end_time - start_time;
 
         // Compute on device
-        dim3 blockSize(16, 16); // 16*16=256, should be less than 1024.
+        dim3 blockSize(block_x, block_y);
         dim3 gridSize((cols - 1)/blockSize.x + 1, (rows - 1)/blockSize.y + 1); // gridSize is more than enough, no need for striding.
 
         // Lenia Simulation

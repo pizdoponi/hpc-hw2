@@ -51,6 +51,8 @@ int main(int argc, char **argv)
     unsigned int n = N;
     unsigned int steps = NUM_STEPS;
     const char *output_path = NULL;
+    unsigned int block_x = 16;
+    unsigned int block_y = 16;
 
     if (argc > 1)
     {
@@ -86,13 +88,15 @@ int main(int argc, char **argv)
 
     struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, (int)(n / 3), 0}, {(int)(n / 3), 0, 180}};
 
-    LeniaResult result = evolve_lenia(n, n, steps, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, device);
+    LeniaResult result = evolve_lenia(n, n, steps, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, device, block_x, block_y);
 
     double t_total = result.times.t_execution + result.times.t_copy_to_device + result.times.t_copy_to_host;
 
     printf("DEVICE=%s\n", device == GPU ? "GPU" : "CPU");
     printf("SIZE=%u\n", n);
     printf("STEPS=%u\n", steps);
+    printf("BLOCK_X=%u\n", block_x);
+    printf("BLOCK_Y=%u\n", block_y);
     printf("T_EXEC=%.6f\n", result.times.t_execution);
     printf("T_H2D=%.6f\n", result.times.t_copy_to_device);
     printf("T_D2H=%.6f\n", result.times.t_copy_to_host);

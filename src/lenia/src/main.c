@@ -84,6 +84,32 @@ int main(int argc, char **argv)
     if (argc > 4)
     {
         output_path = argv[4];
+        if (output_path[0] == '\0')
+        {
+            output_path = NULL;
+        }
+    }
+
+    if (argc > 5)
+    {
+        block_x = (unsigned int)strtoul(argv[5], NULL, 10);
+    }
+
+    if (argc > 6)
+    {
+        block_y = (unsigned int)strtoul(argv[6], NULL, 10);
+    }
+
+    if (block_x == 0 || block_y == 0)
+    {
+        fprintf(stderr, "Block dimensions must be positive integers.\n");
+        return 1;
+    }
+
+    if ((unsigned long long)block_x * (unsigned long long)block_y > 1024ULL)
+    {
+        fprintf(stderr, "Block dimensions must satisfy block_x * block_y <= 1024.\n");
+        return 1;
     }
 
     struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, (int)(n / 3), 0}, {(int)(n / 3), 0, 180}};

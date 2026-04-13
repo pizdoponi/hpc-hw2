@@ -17,6 +17,11 @@ typedef enum {
     GPU
 } Device;
 
+typedef enum {
+    MEMORY_SHARED,
+    MEMORY_GLOBAL
+} MemoryMode;
+
 
 typedef struct {
     double t_copy_to_device;
@@ -31,7 +36,7 @@ typedef struct {
 } LeniaResult;
 
 
-LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device, const unsigned int block_x, const unsigned int block_y);
+LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device, const unsigned int block_x, const unsigned int block_y, const MemoryMode memory_mode);
 
 #ifdef __cplusplus
 }

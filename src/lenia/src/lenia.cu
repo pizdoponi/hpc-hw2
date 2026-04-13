@@ -100,7 +100,28 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
 
 // Function to perform convolution on input using kernel w on cuda
 // Note that the kernel is flipped for convolution as per definition, and we use modular indexing for toroidal world
-__global__ void convolve2d_cuda(double *result, const double *input, const double *w, const unsigned int rows, const unsigned int cols, const unsigned int w_rows, const unsigned int w_cols)
+__global__ void convolve2d_cuda_global(double *result, const double *input, const double *w, const unsigned int rows, const unsigned int cols, const unsigned int w_rows, const unsigned int w_cols)
+{
+    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < cols && y < rows)
+    {
+        double sum = 0;
+        for (int ki = w_rows - 1, kri = 0; ki >= 0; ki--, kri++)
+        {
+            for (int kj = w_cols - 1, kcj = 0; kj >= 0; kj--, kcj++)
+            {
+                int r = (y - w_rows / 2 + rows + kri) % rows;
+                int c = (x - w_cols / 2 + cols + kcj) % cols;
+                sum += w[ki * w_cols + kj] * input[r * cols + c];
+            }
+        }
+        result[y * cols + x] = sum;
+    }
+}
+
+__global__ void convolve2d_cuda_shared(double *result, const double *input, const double *w, const unsigned int rows, const unsigned int cols, const unsigned int w_rows, const unsigned int w_cols)
 {
     extern __shared__ double shared_block_memory[];
 
@@ -200,7 +221,7 @@ __global__ void growth_lenia_cuda(double* d_world, double* d_tmp_world, unsigned
 }
 
 // Function to evolve Lenia
-LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device, const unsigned int block_x, const unsigned int block_y)
+LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const unsigned int steps, const double dt, const unsigned int kernel_size, const struct orbium_coo *orbiums, const unsigned int num_orbiums, const Device device, const unsigned int block_x, const unsigned int block_y, const MemoryMode memory_mode)
 {
 
 #ifdef GENERATE_GIF
@@ -251,7 +272,7 @@ LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const
         dim3 blockSize(block_x, block_y);
         dim3 gridSize((cols - 1)/blockSize.x + 1, (rows - 1)/blockSize.y + 1); // gridSize is more than enough, no need for striding.
 
-        // Compute the required size of shared memory per block.
+        // Compute shared-memory size per block only for shared-memory convolution.
         const unsigned int shared_memory_width = blockSize.x + kernel_size - 1;
         const unsigned int shared_memory_height = blockSize.y + kernel_size - 1;
         const size_t shared_memory_bytes = (size_t)shared_memory_width * shared_memory_height * sizeof(double);
@@ -263,7 +284,14 @@ LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const
         for (unsigned int step = 0; step < steps; step++)
         {
             // Convolution
-            convolve2d_cuda<<<gridSize, blockSize, shared_memory_bytes>>>(d_tmp_world, d_world, d_w, rows, cols, kernel_size, kernel_size);
+            if (memory_mode == MEMORY_SHARED)
+            {
+                convolve2d_cuda_shared<<<gridSize, blockSize, shared_memory_bytes>>>(d_tmp_world, d_world, d_w, rows, cols, kernel_size, kernel_size);
+            }
+            else
+            {
+                convolve2d_cuda_global<<<gridSize, blockSize>>>(d_tmp_world, d_world, d_w, rows, cols, kernel_size, kernel_size);
+            }
             checkCudaErrors(cudaGetLastError());
 
             // Evolution

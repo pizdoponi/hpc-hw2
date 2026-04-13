@@ -48,6 +48,7 @@ static void write_pgm(const char *path, const double *world, unsigned int rows, 
 int main(int argc, char **argv)
 {
     Device device = CPU;
+    MemoryMode memory_mode = MEMORY_SHARED;
     unsigned int n = N;
     unsigned int steps = NUM_STEPS;
     const char *output_path = NULL;
@@ -100,6 +101,23 @@ int main(int argc, char **argv)
         block_y = (unsigned int)strtoul(argv[6], NULL, 10);
     }
 
+    if (argc > 7)
+    {
+        if (strcmp(argv[7], "shared") == 0 || strcmp(argv[7], "SHARED") == 0)
+        {
+            memory_mode = MEMORY_SHARED;
+        }
+        else if (strcmp(argv[7], "global") == 0 || strcmp(argv[7], "GLOBAL") == 0)
+        {
+            memory_mode = MEMORY_GLOBAL;
+        }
+        else
+        {
+            fprintf(stderr, "Unknown memory mode '%s'. Use 'shared' or 'global'.\n", argv[7]);
+            return 1;
+        }
+    }
+
     if (block_x == 0 || block_y == 0)
     {
         fprintf(stderr, "Block dimensions must be positive integers.\n");
@@ -114,7 +132,7 @@ int main(int argc, char **argv)
 
     struct orbium_coo orbiums[NUM_ORBIUMS] = {{0, (int)(n / 3), 0}, {(int)(n / 3), 0, 180}};
 
-    LeniaResult result = evolve_lenia(n, n, steps, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, device, block_x, block_y);
+    LeniaResult result = evolve_lenia(n, n, steps, DT, KERNEL_SIZE, orbiums, NUM_ORBIUMS, device, block_x, block_y, memory_mode);
 
     double t_total = result.times.t_execution + result.times.t_copy_to_device + result.times.t_copy_to_host;
 
@@ -123,6 +141,7 @@ int main(int argc, char **argv)
     printf("STEPS=%u\n", steps);
     printf("BLOCK_X=%u\n", block_x);
     printf("BLOCK_Y=%u\n", block_y);
+    printf("MEMORY_MODE=%s\n", memory_mode == MEMORY_SHARED ? "SHARED" : "GLOBAL");
     printf("T_EXEC=%.6f\n", result.times.t_execution);
     printf("T_H2D=%.6f\n", result.times.t_copy_to_device);
     printf("T_D2H=%.6f\n", result.times.t_copy_to_host);

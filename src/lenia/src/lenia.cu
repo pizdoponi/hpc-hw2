@@ -18,6 +18,12 @@
 #define w(r, c) (w[(r) * w_cols + (c)])
 #define input(r, c) (input[((r) % rows) * cols + ((c) % cols)])
 
+__host__ __device__ inline int wrap_index(int index, int size)
+{
+    int wrapped = index % size;
+    return wrapped < 0 ? wrapped + size : wrapped;
+}
+
 // Function to calculate Gaussian
 __host__ __device__ inline double gauss(double x, double mu, double sigma)
 {
@@ -96,25 +102,76 @@ inline double *convolve2d(double *result, const double *input, const double *w, 
 // Note that the kernel is flipped for convolution as per definition, and we use modular indexing for toroidal world
 __global__ void convolve2d_cuda(double *result, const double *input, const double *w, const unsigned int rows, const unsigned int cols, const unsigned int w_rows, const unsigned int w_cols)
 {
-    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+    extern __shared__ double shared_block_memory[];
 
-    if (x < cols && y < rows)
+    const unsigned int local_x = threadIdx.x; // inside the block.
+    const unsigned int local_y = threadIdx.y;
+    const unsigned int global_x = blockIdx.x * blockDim.x + local_x; // in the world / grid.
+    const unsigned int global_y = blockIdx.y * blockDim.y + local_y;
+
+    // The current convolution uses offsets [-w_rows/2, ..., +w_rows/2-1].
+    // For a 26x26 kernel, that means 13 cells of halo on the "negative" side (left/top),
+    // and 12 cells on the "positive" side (right/bottom).
+    const unsigned int left_halo = w_cols / 2;
+    const unsigned int top_halo = w_rows / 2;
+    const unsigned int right_halo = w_cols - left_halo - 1;
+    const unsigned int bottom_halo = w_rows - top_halo - 1;
+
+    const unsigned int shared_memory_width = blockDim.x + left_halo + right_halo;
+    const unsigned int shared_memory_height = blockDim.y + top_halo + bottom_halo;
+    const unsigned int shared_memory_elements = shared_memory_width * shared_memory_height;
+
+    // The top left element of the shared tile corresponds to the block's top left
+    // output cell shifted by the halo size.
+    // This is where we need to start loading from global memory.
+    const int shared_memory_global_start_x = (int)(blockIdx.x * blockDim.x) - (int)left_halo;
+    const int shared_memory_global_start_y = (int)(blockIdx.y * blockDim.y) - (int)top_halo;
+
+    // Each thread loads several elements, striding by the total number of threads in the block.
+    const unsigned int thread_linear_index = local_y * blockDim.x + local_x;
+    const unsigned int threads_per_block = blockDim.x * blockDim.y;
+
+    for (unsigned int shared_index = thread_linear_index; shared_index < shared_memory_elements; shared_index += threads_per_block)
     {
-        double sum = 0;
-        for (int ki = w_rows - 1, kri = 0; ki >= 0; ki--, kri++)
-        {
-            for (int kj = w_cols - 1, kcj = 0; kj >= 0; kj--, kcj++)
-            {
-                    int r = (y - w_rows / 2 + rows + kri) % rows;
-                    int c = (x - w_cols / 2 + cols + kcj) % cols;
-                    sum += w[ki * w_cols + kj] * input[r * cols + c];}
-        }
-        result[y * cols + x] = sum;
+        // Recover the 2D coordinates from the linear index.
+        const unsigned int shared_y = shared_index / shared_memory_width;
+        const unsigned int shared_x = shared_index % shared_memory_width;
+
+        const int wrapped_global_y = wrap_index(shared_memory_global_start_y + (int)shared_y, (int)rows);
+        const int wrapped_global_x = wrap_index(shared_memory_global_start_x + (int)shared_x, (int)cols);
+
+        shared_block_memory[shared_index] = input[wrapped_global_y * cols + wrapped_global_x];
     }
 
-    // Else do nothing because we are out of bounds.
+    // All threads must wait until the shared tile is fully populated before any thread starts reading from it for the convolution.
+    __syncthreads();
 
+    if (global_x >= cols || global_y >= rows)
+    {
+        return;
+    }
+
+    double sum = 0.0;
+
+    // The thread's local output position inside the block maps to the top-left
+    // corner of its stencil window inside the shared tile.
+    for (unsigned int stencil_row = 0; stencil_row < w_rows; stencil_row++)
+    {
+        const unsigned int kernel_row = w_rows - 1 - stencil_row;
+        const unsigned int shared_row = local_y + stencil_row;
+
+        for (unsigned int stencil_col = 0; stencil_col < w_cols; stencil_col++)
+        {
+            const unsigned int kernel_col = w_cols - 1 - stencil_col;
+            const unsigned int shared_col = local_x + stencil_col;
+
+            const double kernel_value = w[kernel_row * w_cols + kernel_col];
+            const double world_value = shared_block_memory[shared_row * shared_memory_width + shared_col];
+            sum += kernel_value * world_value;
+        }
+    }
+
+    result[global_y * cols + global_x] = sum;
 }
 
 __global__ void growth_lenia_cuda(double* d_world, double* d_tmp_world, unsigned int rows, unsigned int cols, double dt)
@@ -194,6 +251,11 @@ LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const
         dim3 blockSize(block_x, block_y);
         dim3 gridSize((cols - 1)/blockSize.x + 1, (rows - 1)/blockSize.y + 1); // gridSize is more than enough, no need for striding.
 
+        // Compute the required size of shared memory per block.
+        const unsigned int shared_memory_width = blockSize.x + kernel_size - 1;
+        const unsigned int shared_memory_height = blockSize.y + kernel_size - 1;
+        const size_t shared_memory_bytes = (size_t)shared_memory_width * shared_memory_height * sizeof(double);
+
         // Lenia Simulation
         // Each time step is still sequential, so this for loop is needed.
         start_time = omp_get_wtime();
@@ -201,7 +263,7 @@ LeniaResult evolve_lenia(const unsigned int rows, const unsigned int cols, const
         for (unsigned int step = 0; step < steps; step++)
         {
             // Convolution
-            convolve2d_cuda<<<gridSize, blockSize>>>(d_tmp_world, d_world, d_w, rows, cols, kernel_size, kernel_size);
+            convolve2d_cuda<<<gridSize, blockSize, shared_memory_bytes>>>(d_tmp_world, d_world, d_w, rows, cols, kernel_size, kernel_size);
             checkCudaErrors(cudaGetLastError());
 
             // Evolution

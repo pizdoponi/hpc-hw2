@@ -1,4 +1,4 @@
-## Assignment 2: Lenia - CUDA Parallelization and Performance Analysis
+# Assignment 2: Lenia
 
 ## 1. Implementation
 
@@ -10,31 +10,29 @@ The core Lenia algorithm consists of two operations per timestep:
 2. **Growth Update**: Cell values are updated based on a Gaussian growth function applied to the convolution result.
 
 We parallelize both operations using thread-per-thread-output mapping:
-- Grid and block dimensions are computed dynamically based on world size: `gridSize = ((cols-1)/16 + 1, (rows-1)/16 + 1)` and `blockSize = (16, 16)`.
+
+- Grid dimensions are computed dynamically based on world size: `gridSize = ((cols-1)/16 + 1, (rows-1)/16 + 1)`.
+- Block dimensions are passed as runtime (CLI) arguments to benchmark different block shapes.
 - Each thread independently computes one output cell, performing full kernel operations for convolution.
-- Toroidal wrapping uses modular arithmetic without global synchronization overhead between cells.
-- The executable accepts runtime block configuration (`block_x`, `block_y`) to benchmark different block shapes.
 
 ### 1.2 Memory Management and Transfer Optimization
 
 We minimize host-device bandwidth by:
-- **Single upfront transfer**: The kernel and initial world state are transferred once at the start (H2D).
-- **On-device computation**: All 100 timesteps execute entirely on GPU with no intermediate transfers.
-- **Single final transfer**: Only the final state is copied back to host (D2H).
 
-This approach reduces redundant PCIe traffic compared to per-step transfers. The measured timings include all three components:
-$$T_{\text{total}} = T_{\text{H2D}} + T_{\text{execution}} + T_{\text{D2H}}$$
+- **Initialising state on host**: The kernel and initial world are initialised on host because it is more convenient.
+- **Single first transfer**: The kernel and initial world state are transferred to device once at the start.
+- **On device computation**: All 100 timesteps execute entirely on GPU with no intermediate transfers.
+- **Single final transfer**: Only the final world state is copied back to host.
 
-Execution time includes explicit `cudaDeviceSynchronize()` to account for asynchronous kernel launch overhead.
+This approach reduces redundant transfers between host and device compared to per step transfers. Furthermore, there is no real reason to transfer any data during the computation back to host. For this reason, and since the requirements were to implement it as efficiently as possible, we did not separately benchmark the speedup gain no transfers vs. transfer per time step.
+
+The measured timings include all three components:
+
+$$T_{\text{total}} = T_{\text{t_host_to_device}} + T_{\text{execution}} + T_{\text{t_device_to_host}}$$
 
 ### 1.3 Thread Block Optimization
 
-We selected a 16×16 thread block configuration (256 threads per block):
-- Provides efficient 2D spatial decomposition where each thread computes one output cell.
-- Scales consistently across all tested grid sizes (256 to 4096).
-- Dynamically computed grid dimensions: `gridSize = ((cols-1)/16 + 1, (rows-1)/16 + 1)`.
-
-To verify block configuration impact, we benchmarked 8×32, 16×16, 32×8, and 32×16 on GPU. Measured average times (s) were:
+To test how block sizes affect performance, we measured execution times for different configurations. Measured average times (s) were:
 
 | Grid Size | 8×32 | 16×16 | 32×8 | 32×16 | Best |
 |-----------|------|-------|------|-------|------|
@@ -44,6 +42,7 @@ To verify block configuration impact, we benchmarked 8×32, 16×16, 32×8, and 3
 | 4096×4096 | 2.423494 | 2.375615 | 2.377747 | 2.378126 | 16×16 |
 
 Thus, 16×16 was the best-performing configuration for larger grids (2048 and 4096), while 32×16 / 32×8 were faster on smaller grids (512 and 1024).
+
 
 For the shared-vs-global memory comparison we used the default 16×16 configuration.
 

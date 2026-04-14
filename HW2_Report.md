@@ -11,24 +11,13 @@ The core Lenia algorithm consists of two operations per timestep:
 1. **2D Convolution**: Each cell's state is convolved with a 26×26 ring kernel using toroidal boundary conditions.
 2. **Growth Update**: Cell values are updated based on a Gaussian growth function applied to the convolution result.
 
-We parallelize both operations using per thread operations:
-
-- Block dimensions are passed as runtime (CLI) arguments to benchmark different block shapes.
-- Grid dimensions are computed dynamically based on world size: `gridSize = ((cols-1)/blockSize.x + 1, (rows-1)/blockSize.y + 1)`.
-- Each thread independently computes one output cell, performing full kernel operations for convolution.
-
-We realize that both operations, convolution and growth update, could be implemented in the same kernel. However, due to cleaner implementation we decided to keep them separate. There might be small overhead due to having to launch more kernels, but we did not measure that and cannot me sure. In any case, we presume the time difference is negligible and opted for separate kernels, for better separability (if it would have to be maintained, a single responsibility guideline is a good one).
+We parallelize both operations using per thread operations. We realize that both operations, convolution and growth update, could be implemented in the same kernel. However, due to cleaner implementation we decided to keep them separate. There might be small overhead due to having to launch more kernels, but we did not measure that and cannot me sure.
 
 ### 1.2 Memory Management and Transfer Optimization
 
-We minimize host-device bandwidth by:
+We minimize host-device bandwidth by initializing the kernel and initial world state on host, transfer it to device once, perform all computation on device without exchanging any data between the host and device during computation, and transfer only the final world state back to host.
 
-- **Initializing state on host**: The kernel and initial world are initialized on host because it is more convenient.
-- **Single first transfer**: The kernel and initial world state are transferred to device once at the start.
-- **On device computation**: All 100 timesteps execute entirely on GPU with no intermediate transfers.
-- **Single final transfer**: Only the final world state is copied back to host.
-
-This approach reduces redundant transfers between host and device compared to per step transfers. Furthermore, there is no real reason to transfer any data during the computation back to host. For this reason, and since the requirements were to implement it as efficiently as possible, we did not separately benchmark the speedup gain for initial and final transfer vs. one transfer per time step.
+This approach reduces redundant transfers between host and device compared to per step transfers. Furthermore, there is no real reason to transfer any data during the computation back to host. For this reason, and since the requirements were to implement it as efficiently as possible, we did not separately benchmark the speedup gain compared to transferring data each time step.
 
 The measured timings include all three components: `t_total = t_host_to_device + t_execution + t_device_to_host`.
 
@@ -38,10 +27,10 @@ To test how block sizes affect performance, we measured execution times for diff
 
 | Grid Size | 8×32 | 16×16 | 32×8 | 32×16 | Best |
 |-----------|------|-------|------|-------|------|
-| 512×512   | 0.040212 ± 0.000060 | **0.027493 ± 0.000216** | 0.029014 ± 0.000093 | 0.029200 ± 0.000125 | 16×16 |
-| 1024×1024 | 0.119117 ± 0.000182 | 0.094293 ± 0.008852 | 0.087860 ± 0.001067 | **0.087664 ± 0.000594** | 32×16 |
-| 2048×2048 | 0.473021 ± 0.000165 | 0.352691 ± 0.001434 | 0.354624 ± 0.000934 | **0.352341 ± 0.001020** | 32×16 |
-| 4096×4096 | 1.879017 ± 0.002800 | **1.419096 ± 0.004742** | 1.426292 ± 0.003966 | 1.422633 ± 0.003883 | 16×16 |
+| 512×512   | 0.040 ± 0.000 | **0.027 ± 0.000** | 0.029 ± 0.000 | 0.029 ± 0.000 | 16×16 |
+| 1024×1024 | 0.119 ± 0.000 | 0.094 ± 0.009 | 0.088 ± 0.001 | **0.088 ± 0.001** | 32×16 |
+| 2048×2048 | 0.473 ± 0.000 | 0.353 ± 0.001 | 0.355 ± 0.001 | **0.352 ± 0.001** | 32×16 |
+| 4096×4096 | 1.879 ± 0.003 | **1.419 ± 0.005** | 1.426 ± 0.004 | 1.423 ± 0.004 | 16×16 |
 
 **Table 1: Measured GPU execution times for different thread block shapes, reported as mean ± sample standard deviation over 5 runs.**
 

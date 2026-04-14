@@ -50,10 +50,6 @@ run_one() {
 
 for size in "${sizes[@]}"; do
     repeats=5
-    if [[ "$size" -eq 4096 ]]; then
-        repeats=1
-    fi
-
     for shape in "${shapes[@]}"; do
         read -r block_x block_y <<< "$shape"
         for ((r=1; r<=repeats; r++)); do

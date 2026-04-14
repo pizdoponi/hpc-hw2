@@ -1,0 +1,6 @@
+pdf-engine: xelatex
+
+variables:
+  documentclass: extarticle
+  fontsize: 8pt
+  geometry: margin=1.5cm
